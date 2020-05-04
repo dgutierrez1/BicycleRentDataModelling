@@ -9,6 +9,7 @@ library(Hmisc)
 library(car)
 library(lmtest)
 library(olsrr)
+library(sandwich)
 
 # Data load
 # setwd('/Users/daniel/Documents/MCD/Quantitative Analysis/bicycle-rent')
@@ -83,9 +84,9 @@ bptest(firstModel, studentize = FALSE)
 bptest(firstModel, studentize = TRUE)
 
 ols_test_breusch_pagan(firstModel, rhs = TRUE, multiple = TRUE, p.adj = 'bonferroni')
+ols_test_normality(firstModel)
 
-
-
+coeftest(res1, vcov = (vcovHC(res1)))
 
 
 # Modelo seleccionado automaticamente
