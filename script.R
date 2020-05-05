@@ -10,6 +10,12 @@ library(car)
 library(lmtest)
 library(olsrr)
 library(sandwich)
+library(AER)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(relaimpo)
+library(lm.beta)
 
 # Data load
 # setwd('/Users/daniel/Documents/MCD/Quantitative Analysis/bicycle-rent')
@@ -51,17 +57,18 @@ data$weathersit = factor(
   data$weathersit,
   levels=c(1:4),
   labels=c(
-    "Clear-FewClouds-PartlyCloudy",
-    "Mist+Cloudy-Mist+BrokenClouds-Mist+FewClouds-Mist",
-    "LightSnow-LightRain+Thunderstorm+ScatteredClouds-LightRain+ScatteredClouds",
-    "HeavyRain+IcePallets+Thunderstorm+Mist-Snow+Fog"
+    "ClearFewCloudsPartlyCloudy",
+    "MistCloudyMistBrokenCloudsMistFewCloudsMist",
+    "LightSnowLightRainThunderstormScatteredCloudsLightRainScatteredClouds",
+    "HeavyRainIcePalletsThunderstormMisSnowFog"
   ))
 summary(data$weathersit)
 
 
 # Modelo inicial - Regresion multiple, Inferencia, Variables dummy
 # firstModelData = data %>% select(-dteday, -instant)
-firstModelData = data[,c(-1,-2,-5,-6,-11,-14,-15)]
+firstModelData = data[,c(-1,-2,-5,-6,-11,-15)]
+firstModelData = data[,c(-1,-2,-11,-15)]
 firstModel = lm(cnt ~ ., data = firstModelData)
 summary(firstModel)
 
@@ -79,15 +86,32 @@ kappa <- sqrt(lambda.1/lambda.k)
 kappa
 
 # Heterocedasticidad
-bptest(firstModel, studentize = FALSE)
+# Plot the errors against the data
+residuals <-resid(firstModel)
+attach(firstModelData)
+# par(mfrow=c(2,2))
+# plot(season, residuals)
+# plot(yr, residuals)
+# plot(hum, residuals)
+# plot(temp, residuals)
+# plot(weathersit, residuals)
+# plot(weekday, residuals)
+# plot(windspeed, residuals)
+# plot(workingday, residuals)
+# plot(yr, residuals)
 
-bptest(firstModel, studentize = TRUE)
+
+bptest(firstModel, studentize = FALSE)
 
 ols_test_breusch_pagan(firstModel, rhs = TRUE, multiple = TRUE, p.adj = 'bonferroni')
 ols_test_normality(firstModel)
 
-coeftest(res1, vcov = (vcovHC(res1)))
+bptest(firstModel, studentize = TRUE)
 
+verifiedModel = firstModel
+verifiedCoefficients = coeftest(firstModel, vcov = (vcovHC(firstModel)))
+summary(verifiedCoefficients)
+summary(firstModel)
 
 # Modelo seleccionado automaticamente
 # fwd.model <- regsubsets(x = firstModelData, y = data$cnt, nvmax=500, method = "forward")
@@ -119,6 +143,23 @@ fwd.bwd.model = stepwise(
 length(fwd.bwd.model$coefficients)
 summary(fwd.bwd.model)
 
+jtest(bwd.model, fwd.model)
+anova(bwd.model, fwd.model)
+
+tab_model(fwd.model, bwd.fwd.model, 
+          show.ci = FALSE, 
+          dv.labels = c("Reduced Forward Model", "Backward Model"),
+          transform = NULL
+)
+
+
+bptest(fwd.model, studentize = TRUE)
+
+calc.relimp(fwd.model, type = "betasq")
+
+
+modelo2.s <- lm.beta(fwd.model)
+coeftest(modelo2.s, vcov = (vcovHC(fwd.model))) 
 # Multicolinealidad
 
 # Heterocedasticidad
