@@ -16,14 +16,45 @@ library(sjmisc)
 library(sjlabelled)
 library(relaimpo)
 library(lm.beta)
+library(tseries)
+library(car)
+# ----------------- HELPER FUNCTIONS
+getKappa = function(model){
+  modelXTX <- model.matrix(model)
+  eModel <- eigen(t(modelXTX) %*% modelXTX)
+  
+  lambda.1 <- max(eModel$val)
+  lambda.k <- min(eModel$val)
+  kappa <- sqrt(lambda.1/lambda.k)
+  kappa
+}
 
-# Data load
+removeVIF <- function(modelo, u){
+  require(car)
+  data <- modelo$model
+  all_vifs <- car::vif(modelo)
+  names_all <- rownames(all_vifs)
+  dep_var <- all.vars(formula(modelo))[1]
+  while(any(all_vifs > u)){
+    var_max_vif <- names(which(all_vifs == max(all_vifs)))
+    names_all <- names_all[!(names_all) %in% var_max_vif]
+    myForm <- as.formula(paste(paste(dep_var, "~ "),
+                               paste (names_all, collapse=" + "), sep=""))
+    modelo.prueba <- lm(myForm, data= data)
+    all_vifs <- car::vif(modelo.prueba) 
+  }
+  modelo.limpio <- modelo.prueba
+  return(modelo.limpio)
+}
+
+
+# ----------------- DATA LOADING
 # setwd('/Users/daniel/Documents/MCD/Quantitative Analysis/bicycle-rent')
 orData = read.csv('./day.csv')
 data = orData
 str(data)
 
-# Data transformation
+# ----------------- Data transformation
 # Date
 data$dteday = as.Date(as.character(data$dteday), format="%Y-%m-%d")
 summary(data$dteday)
@@ -65,53 +96,21 @@ data$weathersit = factor(
 summary(data$weathersit)
 
 
-# Modelo inicial - Regresion multiple, Inferencia, Variables dummy
-# firstModelData = data %>% select(-dteday, -instant)
-firstModelData = data[,c(-1,-2,-5,-6,-11,-15)]
-firstModelData = data[,c(-1,-2,-11,-15)]
+# ----------------- Modelo inicial
+firstModelData = data[,c(-1,-2,-3,-8,-11,-14,-15)]
+# firstModelData = data[,c(-1,-2,-3,-8,-11,-14,-15)]
 firstModel = lm(cnt ~ ., data = firstModelData)
+length(firstModel$coefficients)
 summary(firstModel)
-
+removeVIF(firstModel,8)
 # Multicolinealidad
 # Prueba VIF
-vif(firstModel)
+vifs = vif(firstModel)
+rownames(vifs)
 
 # Prueba de Belskey, Kuh y Welsh
-firstModelXTX <- model.matrix(firstModel)
-eFirstModel <- eigen(t(firstModelXTX) %*% firstModelXTX)
+getKappa(firstModel)
 
-lambda.1 <- max(eFirstModel$val)
-lambda.k <- min(eFirstModel$val)
-kappa <- sqrt(lambda.1/lambda.k)
-kappa
-
-# Heterocedasticidad
-# Plot the errors against the data
-residuals <-resid(firstModel)
-attach(firstModelData)
-# par(mfrow=c(2,2))
-# plot(season, residuals)
-# plot(yr, residuals)
-# plot(hum, residuals)
-# plot(temp, residuals)
-# plot(weathersit, residuals)
-# plot(weekday, residuals)
-# plot(windspeed, residuals)
-# plot(workingday, residuals)
-# plot(yr, residuals)
-
-
-bptest(firstModel, studentize = FALSE)
-
-ols_test_breusch_pagan(firstModel, rhs = TRUE, multiple = TRUE, p.adj = 'bonferroni')
-ols_test_normality(firstModel)
-
-bptest(firstModel, studentize = TRUE)
-
-verifiedModel = firstModel
-verifiedCoefficients = coeftest(firstModel, vcov = (vcovHC(firstModel)))
-summary(verifiedCoefficients)
-summary(firstModel)
 
 # Modelo seleccionado automaticamente
 # fwd.model <- regsubsets(x = firstModelData, y = data$cnt, nvmax=500, method = "forward")
@@ -146,12 +145,34 @@ summary(fwd.bwd.model)
 jtest(bwd.model, fwd.model)
 anova(bwd.model, fwd.model)
 
-tab_model(fwd.model, bwd.fwd.model, 
+tab_model(fwd.model, bwd.model, fwd.bwd.model,
           show.ci = FALSE, 
           dv.labels = c("Reduced Forward Model", "Backward Model"),
           transform = NULL
 )
 
+getKappa(bwd.model)
+
+# Heterocedasticidad
+# Plot the errors against the data
+residuals <-resid(firstModel)
+attach(firstModelData)
+# par(mfrow=c(2,2))
+# plot(season, residuals)
+# plot(yr, residuals)
+# plot(hum, residuals)
+# plot(temp, residuals)
+# plot(weathersit, residuals)
+# plot(weekday, residuals)
+# plot(windspeed, residuals)
+# plot(workingday, residuals)
+# plot(yr, residuals)
+
+
+bptest(firstModel, studentize = FALSE)
+
+ols_test_breusch_pagan(firstModel, rhs = TRUE, multiple = TRUE, p.adj = 'bonferroni')
+ols_test_normality(firstModel)
 
 bptest(fwd.model, studentize = TRUE)
 
@@ -160,10 +181,17 @@ calc.relimp(fwd.model, type = "betasq")
 
 modelo2.s <- lm.beta(fwd.model)
 coeftest(modelo2.s, vcov = (vcovHC(fwd.model))) 
-# Multicolinealidad
-
-# Heterocedasticidad
 
 # Autocorrelacion
 
+errors = residuals(fwd.model)
+sig_errors = factor(errors > 0)
+summary(sig_errors)
+runs.test(sig_errors)
+
+dwtest(fwd.model, alternative = "two.sided")
+
+
+coeftest(fwd.model, vcov = NeweyWest(fwd.model))
+coeftest(fwd.model, vcov = kernHAC(fwd.model))
 # Coeficientes estandarizados
